@@ -2,10 +2,34 @@
     'use strict';
 
     // ===== CONFIG ============================================================
-    // SSML markup (emphasis / breaks / prosody). Apple voices on Safari/macOS
-    // honour it; Google voices read the tags out loud, so turn this OFF for
-    // them. true = build SSML, false = plain text.
-    const SSML = false;
+    // Config comes from the FreshRSS extension settings, injected by
+    // extension.php as query params on this script's URL (Minz_View has no
+    // inline-<script> API). Falls back to defaults if the script is loaded
+    // without those params.
+    //
+    //   ssml  -> SSML markup (emphasis / breaks / prosody). Apple voices on
+    //            Safari/macOS honour it; Google voices read the tags out loud.
+    //   langs -> comma-separated BCP-47 tags (es-es,en-gb). Only voices in
+    //            those languages are listed. Empty = all voices.
+    const CONFIG = (() => {
+        const defaults = { ssml: false, languages: [] };
+        try {
+            const el =
+                document.getElementById('read-aloud-js') ||
+                document.currentScript;
+            if (!el || !el.src) return defaults;
+            const qs = new URL(el.src, location.href).searchParams;
+            const languages = (qs.get('langs') || '')
+                .split(',')
+                .map(s => s.trim().toLowerCase())
+                .filter(Boolean);
+            return { ssml: qs.get('ssml') === '1', languages };
+        } catch (e) {
+            return defaults;
+        }
+    })();
+
+    const SSML = CONFIG.ssml;
     // =========================================================================
 
     if (!('speechSynthesis' in window)) {
@@ -24,6 +48,16 @@
 
     function loadVoices() {
         voices = synth.getVoices();
+    }
+
+    // A voice passes the language filter when its lang exactly matches a
+    // configured tag (es-ES) or is a variant of a bare one (es -> es-*).
+    // Empty filter shows everything.
+    function voiceAllowed(voice) {
+        const langs = CONFIG.languages;
+        if (!langs.length) return true;
+        const vl = (voice.lang || '').toLowerCase().replace('_', '-');
+        return langs.some(l => vl === l || vl.startsWith(l + '-'));
     }
 
     loadVoices();
@@ -56,7 +90,9 @@
 
         select.innerHTML = '';
 
-        if (!voices.length) {
+        const list = voices.filter(voiceAllowed);
+
+        if (!list.length) {
             const opt = document.createElement('option');
             opt.value = '';
             opt.textContent = 'Default voice';
@@ -64,15 +100,15 @@
             return;
         }
 
-        voices.forEach(voice => {
+        list.forEach(voice => {
             const option = document.createElement('option');
             option.value = voice.name;
             option.textContent = `${voice.name} (${voice.lang})`;
             select.appendChild(option);
         });
 
-        // Restore selection if still available.
-        if (wanted && voices.some(v => v.name === wanted)) {
+        // Restore selection if still available (and not filtered out).
+        if (wanted && list.some(v => v.name === wanted)) {
             select.value = wanted;
         }
     }
