@@ -39,6 +39,14 @@
 
     const synth = window.speechSynthesis;
 
+    // Chrome won't flush the currently-playing utterance on cancel() if the
+    // engine is in its internal "paused" state — the current chunk plays to
+    // the end. resume() first forces an immediate, hard stop everywhere.
+    function hardCancel() {
+        try { synth.resume(); } catch (e) { /* not all engines */ }
+        synth.cancel();
+    }
+
     let voices = [];
 
     const STORAGE_VOICE = 'freshrss_tts_voice';
@@ -452,7 +460,7 @@
     function start(article, controls) {
         // Tear down whatever was running.
         resetState();
-        synth.cancel();
+        hardCancel();
 
         let chunks = null;
         let isSSML = false;
@@ -490,7 +498,7 @@
         if (!player.isPlaying || player.isPaused) return;
         player.isPaused = true;
         player.generation++; // invalidate the in-flight chunk callbacks
-        synth.cancel();
+        hardCancel();
         setUI(player.controls, 'paused');
     }
 
@@ -513,7 +521,7 @@
     function stopPlayback() {
         const c = player.controls;
         player.generation++;
-        synth.cancel();
+        hardCancel();
         resetState();
         if (c) setUI(c, 'idle');
     }
